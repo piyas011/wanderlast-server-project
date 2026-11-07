@@ -1,5 +1,5 @@
 import express from "express";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import "dotenv/config";
 import cors from "cors";
 
@@ -33,6 +33,12 @@ app.get("/", (req, res) => {
 // Add a new destination
 app.post("/add-destination", async (req, res) => {
   const destination = req.body;
+  if (
+    typeof destination.imageUrl === "string" &&
+    destination.imageUrl.trim()
+  ) {
+    destination.imageUrl = destination.imageUrl.trim();
+  }
   const result = await destinationsCollection.insertOne(destination);
   console.log(result);
   res.send(result);
@@ -41,9 +47,102 @@ app.post("/add-destination", async (req, res) => {
 // Get all destinations
 
 app.get("/all-destinations", async (req, res) => {
+  res.set("Cache-Control", "no-store");
   const cursor = destinationsCollection.find({});
   const destinations = await cursor.toArray();
   res.send(destinations);
+});
+
+// Get a single destination by ID
+app.get("/destination/:id", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const id = req.params.id;
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid destination ID" });
+  }
+
+  const destination = await destinationsCollection.findOne({
+    _id: new ObjectId(id),
+  });
+
+  if (!destination) {
+    return res.status(404).send({ message: "Destination not found" });
+  }
+
+  res.send(destination);
+});
+
+// Update an existing destination
+app.put("/destination/:id", async (req, res) => {
+  const id = req.params.id;
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid destination ID" });
+  }
+
+  const destination = await destinationsCollection.findOne({
+    _id: new ObjectId(id),
+  });
+
+  if (!destination) {
+    return res.status(404).send({ message: "Destination not found" });
+  }
+
+  const allowedFields = [
+    "destinationName",
+    "country",
+    "category",
+    "price",
+    "duration",
+    "departureDate",
+    "imageUrl",
+    "description",
+    "rating",
+    "highlights",
+  ];
+  const updates = Object.fromEntries(
+    Object.entries(req.body).filter(([key]) => allowedFields.includes(key)),
+  );
+
+  if (
+    typeof updates.imageUrl !== "string" ||
+    updates.imageUrl.trim() === ""
+  ) {
+    delete updates.imageUrl;
+  } else {
+    updates.imageUrl = updates.imageUrl.trim();
+  }
+
+  const result = await destinationsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: updates },
+  );
+
+  if (!result.matchedCount) {
+    return res.status(404).send({ message: "Destination not found" });
+  }
+
+  res.send({ acknowledged: result.acknowledged, modifiedCount: result.modifiedCount });
+});
+
+// Delete an existing destination
+app.delete("/destination/:id", async (req, res) => {
+  const id = req.params.id;
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid destination ID" });
+  }
+
+  const result = await destinationsCollection.deleteOne({
+    _id: new ObjectId(id),
+  });
+
+  if (!result.deletedCount) {
+    return res.status(404).send({ message: "Destination not found" });
+  }
+
+  res.send({
+    acknowledged: result.acknowledged,
+    deletedCount: result.deletedCount,
+  });
 });
 
 app.listen(PORT, () => {
